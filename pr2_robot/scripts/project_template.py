@@ -58,6 +58,12 @@ def passthrough_filt( cloud, filter_axis = 'z', axis_min = 0.77, axis_max = 1.1 
     passthrough.set_filter_limits(axis_min, axis_max)
     return passthrough.filter()
 
+def outlier_filt( cloud, mean_k = 50, dev_mul = 1.0 ):
+    out = cloud.make_statistical_outlier_filter()
+    out.set_mean_k( mean_k )
+    out.set_std_dev_mul_thresh( dev_mul)
+    return out.filter()
+
 def seg_plane( cloud, max_distance = 0.01 ):
     seg = cloud.make_segmenter()
     seg.set_model_type(pcl.SACMODEL_PLANE)
@@ -84,10 +90,13 @@ def euclidean_cluster( white_cloud ):
 def pcl_callback(pcl_msg):
 
     # Convert ROS msg to PCL data
-    data = ros_to_pcl( pcl_msg )
+    cloud = ros_to_pcl( pcl_msg )
 
-    #  Voxel Grid Downsampling
-    cloud = vox_filt( data )
+    # Outliers removing
+    cloud = outlier_filt( cloud )
+
+    # Voxel Grid Downsampling
+    cloud = vox_filt( cloud )
 
     # PassThrough Filter
     cloud = passthrough_filt( cloud )
@@ -223,7 +232,7 @@ if __name__ == '__main__':
     rospy.init_node( 'pick_place', anonymous = True )
 
     # TODO: Create Subscribers
-    pcl_sub = rospy.Subscriber( "/sensor_stick/point_cloud", PointCloud2, pcl_callback, queue_size = 1 )
+    pcl_sub = rospy.Subscriber( "/pr2/world/points", PointCloud2, pcl_callback, queue_size = 1 )
 
     # TODO: Create Publishers
     pcl_table_pub = rospy.Publisher( "/pcl_table", PointCloud2, queue_size = 1 )
