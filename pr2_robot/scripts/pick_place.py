@@ -52,7 +52,7 @@ def vox_filt( cloud, LEAF_SIZE = 0.01 ):
     vox.set_leaf_size(LEAF_SIZE, LEAF_SIZE, LEAF_SIZE)
     return vox.filter()
 
-def passthrough_filt( cloud, filter_axis = 'z', axis_min = 0.77, axis_max = 1.1 ):
+def passthrough_filt( cloud, filter_axis = 'z', axis_min = 0.6, axis_max = 1.1 ):
     passthrough = cloud.make_passthrough_filter()
     passthrough.set_filter_field_name(filter_axis)
     passthrough.set_filter_limits(axis_min, axis_max)
@@ -72,17 +72,17 @@ def seg_plane( cloud, max_distance = 0.01 ):
     inliers, coefficients = seg.segment()
     return inliers, coefficients
 
-def euclidean_cluster( white_cloud ):
+def euclidean_cluster( white_cloud, tolerance = 0.05, min = 10, max = 2500 ):
     tree = white_cloud.make_kdtree()
     # Create a cluster extraction object
     ec = white_cloud.make_EuclideanClusterExtraction()
     # Set tolerances for distance threshold
     # as well as minimum and maximum cluster size (in points)
-    ec.set_ClusterTolerance( 0.05 )
-    ec.set_MinClusterSize( 10 )
-    ec.set_MaxClusterSize( 2500 )
+    ec.set_ClusterTolerance( tolerance )
+    ec.set_MinClusterSize( min )
+    ec.set_MaxClusterSize( max )
     # Search the k-d tree for clusters
-    ec.set_SearchMethod(tree)
+    ec.set_SearchMethod( tree )
     # Extract indices for each of the discovered clusters
     return ec.Extract()
 
@@ -92,30 +92,55 @@ def pcl_callback(pcl_msg):
     # Convert ROS msg to PCL data
     cloud = ros_to_pcl( pcl_msg )
 
-    pcl_cluster_pub.publish( pcl_to_ros( cloud ) )
-
     # # Outliers removing
     # cloud = outlier_filt( cloud )
-    #
-    # # Voxel Grid Downsampling
-    # cloud = vox_filt( cloud )
-    #
-    # # PassThrough Filter
-    # cloud = passthrough_filt( cloud )
-    #
-    # # RANSAC Plane Segmentation
-    # inliers, coefficients = seg_plane( cloud )
-    #
-    # # Extract inliers and outliers
-    # cloud_table = cloud.extract( inliers, negative = False )
-    # cloud_objects = cloud.extract( inliers, negative = True )
-    #
-    # # Convert PCL data to ROS messages
-    # ros_cloud_table = pcl_to_ros( cloud_table )
-    # ros_cloud_objects = pcl_to_ros( cloud_objects )
-    #
-    # pcl_table_pub.publish( ros_cloud_table )
-    # pcl_objects_pub.publish( ros_cloud_objects )
+
+    # Voxel Grid Downsampling
+    cloud = vox_filt( cloud )
+
+    # PassThrough Filter
+    cloud = passthrough_filt( cloud )
+    cloud = passthrough_filt( cloud, filter_axis = 'y', axis_min = - 0.45, axis_max = 0.45 )
+
+    # RANSAC Plane Segmentation
+    inliers, coefficients = seg_plane( cloud )
+
+    # Extract inliers and outliers
+    cloud_table = cloud.extract( inliers, negative = False )
+    cloud_objects = cloud.extract( inliers, negative = True )
+
+    # Euclidean Clustering
+    white_cloud = XYZRGB_to_XYZ( cloud_objects )
+    cluster_indices = euclidean_cluster( white_cloud )
+
+    # Create Cluster-Mask Point Cloud to visualize each cluster separately
+    #Assign a color corresponding to each segmented object in scene
+    cluster_color = get_color_list( len( cluster_indices ) )
+
+    color_cluster_point_list = []
+
+    for j, indices in enumerate( cluster_indices ):
+        for i, indice in enumerate(indices):
+            color_cluster_point_list.append( [ white_cloud[ indice ][ 0 ],
+                                               white_cloud[ indice ][ 1 ],
+                                               white_cloud[ indice ][ 2 ],
+                                               rgb_to_float( cluster_color[ j ] ) ] )
+
+    #Create new cloud containing all clusters, each with unique color
+    cluster_cloud = pcl.PointCloud_PointXYZRGB()
+    cluster_cloud.from_list( color_cluster_point_list )
+
+    ros_cluster_cloud = pcl_to_ros( cluster_cloud )
+
+    # Convert PCL data to ROS messages
+    ros_cloud_table = pcl_to_ros( cloud_table )
+    ros_cloud_objects = pcl_to_ros( cloud_objects )
+
+    # Publish ROS messages
+    pcl_table_pub.publish( ros_cloud_table )
+    pcl_objects_pub.publish( ros_cloud_objects )
+
+    pcl_cluster_pub.publish( ros_cluster_cloud )
 
 
 if __name__ == '__main__':
