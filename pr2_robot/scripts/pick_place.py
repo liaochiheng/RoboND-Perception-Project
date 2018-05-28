@@ -16,7 +16,7 @@ from sensor_stick.pcl_helper import *
 
 import rospy
 import tf
-from geometry_msgs.msg import Pose
+from geometry_msgs.msg import Pose, Point, Quaternion
 from std_msgs.msg import Float64
 from std_msgs.msg import Int32
 from std_msgs.msg import String
@@ -47,7 +47,7 @@ def send_to_yaml(yaml_filename, dict_list):
         yaml.dump(data_dict, outfile, default_flow_style=False)
 
 # Define functions as required
-def vox_filt( cloud, LEAF_SIZE = 0.01 ):
+def vox_filt( cloud, LEAF_SIZE = 0.005 ):
     vox = cloud.make_voxel_grid_filter()
     vox.set_leaf_size(LEAF_SIZE, LEAF_SIZE, LEAF_SIZE)
     return vox.filter()
@@ -72,7 +72,7 @@ def seg_plane( cloud, max_distance = 0.01 ):
     inliers, coefficients = seg.segment()
     return inliers, coefficients
 
-def euclidean_cluster( white_cloud, tolerance = 0.05, min = 10, max = 2500 ):
+def euclidean_cluster( white_cloud, tolerance = 0.05, min = 100, max = 2500 ):
     tree = white_cloud.make_kdtree()
     # Create a cluster extraction object
     ec = white_cloud.make_EuclideanClusterExtraction()
@@ -154,10 +154,10 @@ def pcl_callback(pcl_msg):
         ros_cluster = pcl_to_ros( pcl_cluster )
 
         # Compute the associated feature vector
-        chists = compute_color_histograms( ros_cluster, using_hsv = True, bins = 64 )
-        normals = get_normals( ros_cluster )
-        nhists = compute_normal_histograms( normals )
-        feature = np.concatenate( ( chists, nhists ) )
+        chists = compute_color_histograms( ros_cluster, using_hsv = True )
+        # normals = get_normals( ros_cluster )
+        # nhists = compute_normal_histograms( normals )
+        feature = chists # np.concatenate( ( chists, nhists ) )
 
         # Make the prediction
         prediction = clf.predict( scaler.transform( feature.reshape( 1, -1 ) ) )
@@ -180,6 +180,44 @@ def pcl_callback(pcl_msg):
     # Publish the list of detected objects
     detected_objects_pub.publish( detected_objects )
 
+    # output yaml
+    object_list_param = rospy.get_param( '/object_list' )
+    dropbox_param = rospy.get_param( '/dropbox' )
+
+    if dropbox_param[ 0 ][ 'group' ] == 'red':
+        dropbox = {
+            'red': dropbox_param[ 0 ],
+            'green': dropbox_param[ 1 ]
+        }
+    else:
+        dropbox = {
+            'red': dropbox_param[ 1 ],
+            'green': dropbox_param[ 0 ]
+        }
+
+    for obj in object_list_param:
+        name = obj[ 'name' ]
+        group = obj[ 'group' ]
+
+        for do in detected_objects:
+            if do.label == name:
+                ps = ros_to_pcl( do.cloud ).to_array()
+                cs = np.mean( ps, axis = 0 )[ : 3 ]
+
+
+
+def pick_req( test_scene_num, object_name, arm_name, pick_pose, place_pose ):
+    msg_scene = Int32()
+    msg_scene.data = test_scene_num
+
+    msg_obj_name = String()
+    msg_obj_name.data = object_name
+
+    msg_arm_name = String()
+    msg_arm_name.data = arm_name
+
+    msg_pick_pose = Pose()
+    msg_pick_pose.position = Point()
 
 if __name__ == '__main__':
 
