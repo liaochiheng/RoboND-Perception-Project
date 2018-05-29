@@ -209,20 +209,20 @@ def pcl_callback(pcl_msg):
                     ps = ros_to_pcl( do.cloud ).to_array()
                     cs = np.mean( ps, axis = 0 )[ : 3 ]
 
-                    dict = make_yaml_dict( * pick_req( 1, name, box[ 'name' ], cs, box[ 'position' ] ) )
+                    dict = make_yaml_dict( * pick_req( 1, box[ 'name' ], name, cs, box[ 'position' ] ) )
                     dicts.append( dict )
 
         send_to_yaml( output_file, dicts )
 
-def pick_req( test_scene_num, object_name, arm_name, pick_pose, place_pose ):
+def pick_req( test_scene_num, arm_name, object_name,  pick_pose, place_pose ):
     msg_scene = Int32()
     msg_scene.data = test_scene_num
 
-    msg_obj_name = String()
-    msg_obj_name.data = object_name
-
     msg_arm_name = String()
     msg_arm_name.data = arm_name
+
+    msg_obj_name = String()
+    msg_obj_name.data = object_name
 
     msg_pick_pose = Pose()
     msg_pick_pose.position = Point()
@@ -236,7 +236,7 @@ def pick_req( test_scene_num, object_name, arm_name, pick_pose, place_pose ):
     msg_place_pose.position.y = place_pose[ 1 ]
     msg_place_pose.position.z = place_pose[ 2 ]
 
-    return msg_scene, msg_obj_name, msg_arm_name, msg_pick_pose, msg_place_pose
+    return msg_scene, msg_arm_name, msg_obj_name, msg_pick_pose, msg_place_pose
 
 if __name__ == '__main__':
 
