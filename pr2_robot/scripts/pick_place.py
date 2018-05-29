@@ -23,7 +23,7 @@ from std_msgs.msg import String
 from pr2_robot.srv import *
 from rospy_message_converter import message_converter
 import yaml
-
+import os
 
 # Helper function to get surface normals
 def get_normals(cloud):
@@ -181,30 +181,38 @@ def pcl_callback(pcl_msg):
     detected_objects_pub.publish( detected_objects )
 
     # output yaml
-    object_list_param = rospy.get_param( '/object_list' )
-    dropbox_param = rospy.get_param( '/dropbox' )
+    output_file = 'output_1.yaml'
 
-    if dropbox_param[ 0 ][ 'group' ] == 'red':
-        dropbox = {
-            'red': dropbox_param[ 0 ],
-            'green': dropbox_param[ 1 ]
-        }
-    else:
-        dropbox = {
-            'red': dropbox_param[ 1 ],
-            'green': dropbox_param[ 0 ]
-        }
+    if not os.path.exists( output_file ):
+        object_list_param = rospy.get_param( '/object_list' )
+        dropbox_param = rospy.get_param( '/dropbox' )
 
-    for obj in object_list_param:
-        name = obj[ 'name' ]
-        group = obj[ 'group' ]
+        if dropbox_param[ 0 ][ 'group' ] == 'red':
+            dropbox = {
+                'red': dropbox_param[ 0 ],
+                'green': dropbox_param[ 1 ]
+            }
+        else:
+            dropbox = {
+                'red': dropbox_param[ 1 ],
+                'green': dropbox_param[ 0 ]
+            }
 
-        for do in detected_objects:
-            if do.label == name:
-                ps = ros_to_pcl( do.cloud ).to_array()
-                cs = np.mean( ps, axis = 0 )[ : 3 ]
+        dicts = []
+        for obj in object_list_param:
+            name = obj[ 'name' ]
+            group = obj[ 'group' ]
+            box = dropbox[ group ]
 
+            for do in detected_objects:
+                if do.label == name:
+                    ps = ros_to_pcl( do.cloud ).to_array()
+                    cs = np.mean( ps, axis = 0 )[ : 3 ]
 
+                    dict = make_yaml_dict( * pick_req( 1, name, box[ 'name' ], cs, box[ 'position' ] ) )
+                    dicts.append( dict )
+
+        send_to_yaml( output_file, dicts )
 
 def pick_req( test_scene_num, object_name, arm_name, pick_pose, place_pose ):
     msg_scene = Int32()
@@ -218,6 +226,17 @@ def pick_req( test_scene_num, object_name, arm_name, pick_pose, place_pose ):
 
     msg_pick_pose = Pose()
     msg_pick_pose.position = Point()
+    msg_pick_pose.position.x = np.asscalar( pick_pose[ 0 ] )
+    msg_pick_pose.position.y = np.asscalar( pick_pose[ 1 ] )
+    msg_pick_pose.position.z = np.asscalar( pick_pose[ 2 ] )
+
+    msg_place_pose = Pose()
+    msg_place_pose.position = Point()
+    msg_place_pose.position.x = place_pose[ 0 ]
+    msg_place_pose.position.y = place_pose[ 1 ]
+    msg_place_pose.position.z = place_pose[ 2 ]
+
+    return msg_scene, msg_obj_name, msg_arm_name, msg_pick_pose, msg_place_pose
 
 if __name__ == '__main__':
 
