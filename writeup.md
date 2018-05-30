@@ -44,22 +44,68 @@ All the code located here: [pick_place.py](pr2_robot/scripts/pick_place.py)
 3. PassThrough filtering out areas of no interest, with function `passthrough_filt`. I used 2 this filters along axis 'Z' and 'Y' respectively to filter out areas under the table and both left and right box.
 4. Finally, RANSAC Plane Segmentation with function `seg_plane`. For the parameter `max_distance`, i tested 0.005 and 0.01, and found 0.005 would leave some dirty points and 0.01 is good enough.
 5. Extract point cloud of table and objects respectively.(pick_place.py line #109-110)
-#todo add screenshots.
+```
+    # Extract inliers and outliers
+    cloud_table = cloud.extract( inliers, negative = False )
+    cloud_objects = cloud.extract( inliers, negative = True )
+```
+Here are some screenshots for point clouds:
+* Raw world point cloud with noise:  
+![cloud_noise_3](misc/cloud_noise_3.png)
+* Table isolated:  
+![cloud_table_3](misc/cloud_table_3.png)
+* Objects isolated:  
+![cloud_objects_3](misc/cloud_objects_3.png)
+
 
 #### 2. Complete Exercise 2 steps: Pipeline including clustering for segmentation implemented.  
 
+1. Now i got to isolate every object from `cloud_objects`, using Euclidean Cluster.
+2. First, create a `white_cloud` of `cloud_objects` with color information removed.(pick_place.py line #113)
+3. Call a function `euclidean_cluster` to do the extraction.(pick_place.py line #75)
+4. For parameters, `min` and `max` are easy to tell. `tolerance` need be twiddled. I tested from 0.01(means LEAF_SIZE*2), to 0.05, then 0.05 worked fine, so i kept 0.05.
+5. After i got the isolated object points by calling `euclidean_cluster`, i need to generate a new point cloud giving each object one different color.(pick_place.py line #118-133) That new cloud would be published into topic `/pcl_cluster`. (pick_place.py line #143)
 
+Here is a screenshot for cluster point cloud:  
+![cloud_cluster_3](misc/cloud_cluster_3.png)
 
 #### 3. Complete Exercise 3 Steps.  Features extracted and SVM trained.  Object recognition implemented.
-Here is an example of how to include an image in your writeup.
 
-![demo-1](https://user-images.githubusercontent.com/20687560/28748231-46b5b912-7467-11e7-8778-3095172b7b19.png)
+1. Features extraction, the code located in sensor_stick/src/sensor_stick/features.py and sensor_stick/scripts/capture_features.py:
+  * I was using ONLY color features. Of course i have tried color + normal features, but seemed normal features would not contribute to the perception.
+  * In capture_features.py, i captured 200 samples for each model. I captured features for all of the 8 objects that covered all the 3 worlds.
+  * For each sample, i generated ONLY color histogram features with bins=32.
+2. SVM training, the code located in sensor_stick/scripts/train_svm.py:
+  * For the kernel, i have tried linear and sigmoid, and the accuracy result turned out linear is a bit better.
+  * The model was saved into `~/catkin_ws/`.
+  * The accuracy is 0.94, here is the accuracy result:  
+  ![train_svm](misc/train_svm.png)
+3. Object recognition(pick_place.py line #151-174):
+  * Iterate all the indices extracted from `euclidean_cluster`.
+  * Extract points from colorful `cloud_objects`, not `white_cloud`, because color features should be used for recognition. (line #157)
+  * Compute color histogram features and then make a prediction with that trained model.(line #163)
+  * Create a new DetectedObject and pushed into a list for publication.
+  * Create markers with recognition label and publish it, then we can see the recognition result in RViz.(line #168-170)
 
 ### Pick and Place Setup
 
 #### 1. For all three tabletop setups (`test*.world`), perform object recognition, then read in respective pick list (`pick_list_*.yaml`). Next construct the messages that would comprise a valid `PickPlace` request output them to `.yaml` format.
 
-And here's another image!
-![demo-2](https://user-images.githubusercontent.com/20687560/28748286-9f65680e-7468-11e7-83dc-f1a32380b89c.png)
+1. The code for yaml output located in pick_place.py line #183-215.
+2. The 3 output yaml is: [output_1.yaml](output_1.yaml), [output_2.yaml](output_2.yaml), [output_3.yaml](output_3.yaml)  
 
-Spend some time at the end to discuss your code, what techniques you used, what worked and why, where the implementation might fail and how you might improve it if you were going to pursue this project further.  
+Here are the screenshot of recognition in each world:
+* World 1(All recognized correctly):  
+![Good recognition](misc/test_1_good.png)
+* World 2(Failed to recognize glue):  
+![Bad recognition](misc/test_2_bad.png)
+* World 3(Sometimes all correct, sometimes the glue is messed):  
+![Good recognition](misc/test_3_good.png)
+![Bad recognition](misc/test_3_bad.png)
+
+
+### Discussions
+
+1. In world 2, the glue cannot be recognized, and messed with biscuits. That's weired, because the color of glue and biscuits are not even a little similar. Maybe due to it's small size? I don't know yet.
+2. In world 3, all the objects can be recognized correctly except glue. But this case, sometime the glue could be recognized, sometime are not. Still don't figure out why. Maybe relative to the generated noise?
+3. In world 3, the glue is kind of hidden by another object, and in world 2 it is not. So when the glue is clear in the view, it will be recognized correctly(world 2).
